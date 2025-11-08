@@ -4,14 +4,24 @@ const jwt = require('jsonwebtoken');
 
 exports.register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
-    const user = await User.create({ username, email, password });
+    const { username, email, password, fullName, phone } = req.body;
+    
+    const user = await User.create({ 
+      username, 
+      email, 
+      password, 
+      fullName, 
+      phone 
+    });
+    
     res.status(201).json({
       success: true,
       data: {
         id: user._id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone
       }
     });
   } catch (err) {
@@ -22,12 +32,33 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
     const user = await User.findOne({ email });
+    
     if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid credentials' 
+      });
     }
-    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '30m' });
-    res.json({ success: true, token });
+    
+    const token = jwt.sign(
+      { userId: user._id, role: user.role }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30m' }
+    );
+    
+    res.json({ 
+      success: true, 
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role
+      }
+    });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }

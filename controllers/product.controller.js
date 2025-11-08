@@ -2,55 +2,47 @@
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 
-// ========== GET ALL PRODUCTS (CẢI TIẾN) ==========
+// ========== GET ALL PRODUCTS ==========
 exports.getProducts = async (req, res) => {
   try {
-    // Query parameters cho filter, search, sort
     const { 
-      category,     // Lọc theo category ID
-      search,       // Tìm theo tên
-      minPrice,     // Giá tối thiểu
-      maxPrice,     // Giá tối đa
-      sort,         // Sắp xếp: 'price', '-price', 'createdAt'
-      page = 1,     // Trang hiện tại
-      limit = 10    // Số sản phẩm mỗi trang
+      category,
+      search,
+      minPrice,
+      maxPrice,
+      sort,
+      page = 1,
+      limit = 10
     } = req.query;
-    
-    // Build query object
+  
     const query = { isActive: true };
-    
-    // Lọc theo category
+  
     if (category) {
       query.categories = category;
     }
-    
-    // Tìm kiếm theo tên
+  
     if (search) {
-      query.name = { $regex: search, $options: 'i' };  // Case-insensitive
+      query.name = { $regex: search, $options: 'i' };
     }
-    
-    // Lọc theo giá
+  
     if (minPrice || maxPrice) {
       query.price = {};
       if (minPrice) query.price.$gte = Number(minPrice);
       if (maxPrice) query.price.$lte = Number(maxPrice);
     }
     
-    // Xác định sort order
-    let sortOrder = { createdAt: -1 };  // Mặc định: mới nhất
-    if (sort === 'price') sortOrder = { price: 1 };        // Giá tăng dần
-    if (sort === '-price') sortOrder = { price: -1 };      // Giá giảm dần
-    if (sort === 'name') sortOrder = { name: 1 };          // Tên A-Z
-    
-    // Execute query với pagination
+    let sortOrder = { createdAt: -1 };
+    if (sort === 'price') sortOrder = { price: 1 };
+    if (sort === '-price') sortOrder = { price: -1 };
+    if (sort === 'name') sortOrder = { name: 1 };
+  
     const products = await Product.find(query)
       .populate('categories', 'name slug')
       .populate('seller', 'username email')
       .sort(sortOrder)
       .limit(limit * 1)
       .skip((page - 1) * limit);
-    
-    // Đếm tổng số sản phẩm
+  
     const total = await Product.countDocuments(query);
     
     res.json({ 
@@ -69,7 +61,7 @@ exports.getProducts = async (req, res) => {
   }
 };
 
-// ========== GET SINGLE PRODUCT (MỚI) ==========
+// ========== GET SINGLE PRODUCT ==========
 exports.getProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
@@ -95,7 +87,7 @@ exports.getProduct = async (req, res) => {
   }
 };
 
-// ========== CREATE PRODUCT (CẢI TIẾN) ==========
+// ========== CREATE PRODUCT ==========
 exports.createProduct = async (req, res) => {
   try {
     // Validate categories exist
@@ -113,10 +105,19 @@ exports.createProduct = async (req, res) => {
       }
     }
     
-    const product = await Product.create(req.body);
+    // TỰ ĐỘNG LẤY SELLER TỪ TOKEN
+    const productData = {
+      ...req.body,
+      seller: req.user.userId   // ← Từ middleware protect
+    };
     
-    // Populate categories sau khi tạo
-    await product.populate('categories', 'name slug');
+    const product = await Product.create(productData);
+    
+    // Populate sau khi tạo
+    await product.populate([
+      { path: 'categories', select: 'name slug' },
+      { path: 'seller', select: 'username email' }
+    ]);
     
     res.status(201).json({ 
       success: true,
@@ -131,10 +132,29 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-// ========== UPDATE PRODUCT (MỚI) ==========
+// ========== UPDATE PRODUCT (CẢI TIẾN - KIỂM TRA OWNERSHIP) ==========
 exports.updateProduct = async (req, res) => {
   try {
-    // Validate categories nếu có trong request
+    // Bước 1: Tìm product
+    const product = await Product.findById(req.params.id);
+    
+    if (!product) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Product not found' 
+      });
+    }
+    
+    // Bước 2: Kiểm tra quyền sở hữu
+    // Chỉ cho phép: chủ sở hữu (seller) hoặc admin
+    if (product.seller.toString() !== req.user.userId && req.user.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'You are not authorized to update this product' 
+      });
+    }
+    
+    // Bước 3: Validate categories (nếu có)
     if (req.body.categories && req.body.categories.length > 0) {
       const categoryCount = await Category.countDocuments({
         _id: { $in: req.body.categories },
@@ -149,7 +169,11 @@ exports.updateProduct = async (req, res) => {
       }
     }
     
-    const product = await Product.findByIdAndUpdate(
+    // Bước 4: KHÔNG CHO PHÉP thay đổi seller
+    delete req.body.seller;  // Xóa seller khỏi body nếu có
+    
+    // Bước 5: Update product
+    const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
       req.body,
       { 
@@ -159,18 +183,12 @@ exports.updateProduct = async (req, res) => {
     )
     .populate('categories', 'name slug')
     .populate('seller', 'username email');
-    
-    if (!product) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Product not found' 
-      });
-    }
-    
+  
+
     res.json({ 
       success: true,
       message: 'Product updated successfully',
-      data: product 
+      data: updatedProduct 
     });
   } catch (err) {
     res.status(400).json({ 
@@ -180,9 +198,10 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
-// ========== DELETE PRODUCT (MỚI - Soft Delete) ==========
+// ========== DELETE PRODUCT (CẢI TIẾN - KIỂM TRA OWNERSHIP) ==========
 exports.deleteProduct = async (req, res) => {
   try {
+    // Bước 1: Tìm product
     const product = await Product.findById(req.params.id);
     
     if (!product) {
@@ -192,7 +211,16 @@ exports.deleteProduct = async (req, res) => {
       });
     }
     
-    // Soft delete
+    // Bước 2: Kiểm tra quyền sở hữu
+    // Chỉ cho phép: chủ sở hữu (seller) hoặc admin
+    if (product.seller.toString() !== req.user.userId && req.user.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'You are not authorized to delete this product' 
+      });
+    }
+    
+    // Bước 3: Soft delete
     product.isActive = false;
     await product.save();
     

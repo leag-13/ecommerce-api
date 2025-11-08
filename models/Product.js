@@ -23,6 +23,12 @@ const productSchema = new mongoose.Schema({
     min: 0
   },
   
+  // ========== THÊM GIÁ NHẬP ==========
+  costPrice: {
+    type: Number,  // Giá nhập vào (để tính lợi nhuận)
+    min: 0
+  },
+
   categories: [{
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Category'
@@ -35,11 +41,35 @@ const productSchema = new mongoose.Schema({
     min: 0
   },
   
+  // Người tạo sản phẩm (admin)
   seller: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User' 
+    ref: 'User',
+    required: true
+  },
+
+  // ========== THỐNG KÊ ==========
+  soldCount: {
+    type: Number,
+    default: 0  // Số lượng đã bán
   },
   
+  viewCount: {
+    type: Number,
+    default: 0  // Lượt xem
+  },
+  
+  avgRating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  reviewCount: {
+    type: Number,
+    default: 0
+  },
+
   isActive: { 
     type: Boolean, 
     default: true 

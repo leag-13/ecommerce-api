@@ -26,6 +26,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/categories', require('./routes/category.routes'));
 app.use('/api/products', require('./routes/product.routes'));
+app.use('/api/reviews', require('./routes/review.routes'));
 
 // Khởi động server
 const PORT = process.env.PORT || 5000;
